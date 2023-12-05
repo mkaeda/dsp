@@ -24,7 +24,6 @@ $(OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp
 clean:
 	if exist $(OBJ_DIR) rmdir /s /q $(OBJ_DIR)
 	if exist $(BIN_DIR) rmdir /s /q $(BIN_DIR)
-	if exist output.wav del output.wav
 
 debug: LDFLAGS += -g
 debug: $(TARGET)
