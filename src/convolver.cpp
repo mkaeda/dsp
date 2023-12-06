@@ -18,8 +18,8 @@ void convertFloatArrayToData(float *arr, int arrSize, short *out, int outSize);
 
 void Convolver::convolve(WavFile &x, WavFile &h, WavFile &y)
 {
-    const int N = x.getHeaderSubChunk2().subchunk2_size;
-    const int M = h.getHeaderSubChunk2().subchunk2_size;
+    const int N = x.getNumSamples();
+    const int M = h.getNumSamples();
     const int P = N + M - 1;
 
     short *xData = new short[N];
@@ -30,8 +30,8 @@ void Convolver::convolve(WavFile &x, WavFile &h, WavFile &y)
     float *hBuffer = new float[M];
     float *yBuffer = new float[P];
 
-    x.readData(xData, N);
-    h.readData(hData, M);
+    x.readData(xData, x.getHeaderSubChunk2().subchunk2_size);
+    h.readData(hData, x.getHeaderSubChunk2().subchunk2_size);
 
     convertDataToFloatArray(xData, N, xBuffer, N);
     convertDataToFloatArray(hData, M, hBuffer, M);
@@ -40,18 +40,18 @@ void Convolver::convolve(WavFile &x, WavFile &h, WavFile &y)
 
     // Update output header values.
     SubChunk1 sc1 = x.getHeaderSubChunk1();
-    sc1.chunk_size = P + sizeof(SubChunk1) + sizeof(SubChunk2) - 8;
+    sc1.chunk_size = (P * sizeof(short)) + sizeof(SubChunk1) + sizeof(SubChunk2) - 8;
     sc1.subchunk1_size = 16;
     sc1.audio_format = 1;
     sc1.num_channels = 1;
     sc1.sample_rate = 44100;
 
     SubChunk2 sc2 = x.getHeaderSubChunk2();
-    sc2.subchunk2_size = P;
+    sc2.subchunk2_size = P * sizeof(short);
 
     convertFloatArrayToData(yBuffer, P, yData, P);
 
-    y.write(sc1, sc2, yData, P);
+    y.write(sc1, sc2, yData, P * sizeof(short));
 
     delete[] xData;
     delete[] hData;
