@@ -21,19 +21,22 @@ void four1(double data[], int nn, int isign);
 
 void FftConvolver::convolve(WavFile &x, WavFile &h, WavFile &y)
 {
-    short *xData = new short[x.getNumSamples()];
-    short *hData = new short[h.getNumSamples()];
+    const int X_NUM_SAMPLES = x.getNumSamples();
+    const int H_NUM_SAMPLES = h.getNumSamples();
+
+    short *xData = new short[X_NUM_SAMPLES];
+    short *hData = new short[H_NUM_SAMPLES];
 
     x.readData(xData, x.getHeaderSubChunk2().subchunk2_size);
     h.readData(hData, h.getHeaderSubChunk2().subchunk2_size);
 
-    const unsigned long N = getPaddedSize(x.getNumSamples(), h.getNumSamples());
+    const unsigned long N = getPaddedSize(X_NUM_SAMPLES, H_NUM_SAMPLES);
 
     std::vector<double> xComplex(N * 2, 0.0);
     std::vector<double> hComplex(N * 2, 0.0);
 
-    fillComplex(xData, x.getNumSamples(), xComplex);
-    fillComplex(hData, h.getNumSamples(), hComplex);
+    fillComplex(xData, X_NUM_SAMPLES, xComplex);
+    fillComplex(hData, H_NUM_SAMPLES, hComplex);
 
     // Perform FFT on both complex arrays
     four1(&xComplex[0] - 1, N, 1);
@@ -79,17 +82,18 @@ void FftConvolver::convolve(WavFile &x, WavFile &h, WavFile &y)
     }
 
     // Update output header values.
+    const int RES_NUM_BYTES = N * sizeof(short);
     SubChunk1 sc1 = x.getHeaderSubChunk1();
-    sc1.chunk_size = (N * sizeof(short)) + sizeof(SubChunk1) + sizeof(SubChunk2) - 8;
+    sc1.chunk_size = RES_NUM_BYTES + sizeof(SubChunk1) + sizeof(SubChunk2) - 8;
     sc1.subchunk1_size = 16;
     sc1.audio_format = 1;
     sc1.num_channels = 1;
     sc1.sample_rate = 44100;
 
     SubChunk2 sc2 = x.getHeaderSubChunk2();
-    sc2.subchunk2_size = (N * sizeof(short));
+    sc2.subchunk2_size = RES_NUM_BYTES;
 
-    y.write(sc1, sc2, &result[0], (N * sizeof(short)));
+    y.write(sc1, sc2, &result[0], RES_NUM_BYTES);
 
     delete[] xData;
     delete[] hData;

@@ -25,7 +25,12 @@ clean:
 	if exist $(OBJ_DIR) rmdir /s /q $(OBJ_DIR)
 	if exist $(BIN_DIR) rmdir /s /q $(BIN_DIR)
 
+debug: clean
 debug: LDFLAGS += -g
 debug: $(TARGET)
+
+profile: clean
+profile: LDFLAGS += -pg -no-pie
+profile: $(TARGET)
 
 .PHONY: all clean
