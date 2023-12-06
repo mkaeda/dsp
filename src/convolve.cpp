@@ -1,6 +1,6 @@
 #include <iostream>
 #include "wavfile.h"
-#include "convolver.h"
+#include "fft.h"
 
 int main(int argc, char *argv[])
 {
@@ -17,7 +17,7 @@ int main(int argc, char *argv[])
     sample.readHeader();
     impulse.readHeader();
 
-    Convolver convolver = Convolver();
+    FftConvolver convolver = FftConvolver();
     convolver.convolve(sample, impulse, output);
 
     return 0;
