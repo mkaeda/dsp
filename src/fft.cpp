@@ -1,7 +1,6 @@
 #include "fft.h"
 
 #include <iostream>
-#include <algorithm>
 
 FftConvolver::FftConvolver()
 {
@@ -14,68 +13,79 @@ FftConvolver::~FftConvolver()
 }
 
 bool isPowerOfTwo(int n);
-int roundToNextPowerOfTwo(int n);
+unsigned int roundUpToNextPowerOfTwo(unsigned int n);
 void fillComplex(short *data, int dataSize, double *complex);
-void convertComplexToData(double *complex, int arrSize, short *out, int outSize);
+// void convertDataToDoubleArray(short *data, int dataSize, double *out, int outSize);
+void convertDoubleArrayToData(double *arr, int arrSize, short *out, int outSize);
+void createComplexSawtooth(double data[], int size);
 void four1(double data[], int nn, int isign);
 
 void FftConvolver::convolve(WavFile &x, WavFile &h, WavFile &y)
 {
-    const int N = x.getNumSamples();
-    const int M = h.getNumSamples();
-    const int P = N + M - 1;
-    const unsigned int pSize = roundToNextPowerOfTwo(std::max(N, M)) * 2;
-
-    std::cout << "N=" << N << " M=" << M << " pSize=" << pSize << std::endl;
+    const int N = isPowerOfTwo(x.getHeaderSubChunk2().subchunk2_size)
+                      ? x.getHeaderSubChunk2().subchunk2_size
+                      : roundUpToNextPowerOfTwo(x.getHeaderSubChunk2().subchunk2_size);
+    const int M = isPowerOfTwo(h.getHeaderSubChunk2().subchunk2_size)
+                      ? h.getHeaderSubChunk2().subchunk2_size
+                      : roundUpToNextPowerOfTwo(h.getHeaderSubChunk2().subchunk2_size);
+    const int P = isPowerOfTwo(N + M - 1)
+                      ? N + M - 1
+                      : roundUpToNextPowerOfTwo(N + M - 1);
 
     short *xData = new short[N];
     short *hData = new short[M];
+    short *yData = new short[P * 2];
+
+    std::fill(xData, xData + N, 0);
+    std::fill(hData, hData + M, 0);
+
     x.readData(xData, N);
     h.readData(hData, M);
 
-    double *xComplex = new double[pSize];
-    double *hComplex = new double[pSize];
+    double *xBuffer = new double[P * 2];
+    double *hBuffer = new double[P * 2];
 
-    fillComplex(xData, N, xComplex);
-    fillComplex(hData, M, hComplex);
+    fillComplex(xData, N, xBuffer);
+    fillComplex(hData, M, hBuffer);
+    // convertDataToDoubleArray(xData, N, xBuffer, N);
+    // convertDataToDoubleArray(hData, M, hBuffer, M);
 
     // Perform FFT on both arrays
-    four1(xComplex - 1, pSize, 1);
-    // four1(hComplex-1, pSize, 1);
+    four1(xBuffer, P, 1);
+    four1(hBuffer, P, 1);
 
-    // for (unsigned int i = 0; i < pSize; i += 2)
-    // {
-    //     // Perform element-wise multiplication on real and imaginary parts
-    //     double real = xComplex[i] * hComplex[i];
-    //     double imag = xComplex[i] * hComplex[i + 1];
-    //     xComplex[i] = real / pSize;
-    //     xComplex[i + 1] = imag / pSize;
-    // }
+    // Element-wise multiplication in the frequency domain
+    for (int i = 0; i < P * 2; i += 2)
+    {
+        double real = xBuffer[i] * hBuffer[i] - xBuffer[i + 1] * hBuffer[i + 1];
+        double imag = xBuffer[i] * hBuffer[i + 1] + xBuffer[i + 1] * hBuffer[i];
+        xBuffer[i] = real;
+        xBuffer[i + 1] = imag;
+    }
 
-    // double maxVal = *std::max_element(xComplex, xComplex + pSize);
-    // double minVal = *std::min_element(xComplex, xComplex + pSize);
-    // std::cout << "Max Value: " << maxVal << ", Min Value: " << minVal << std::endl;
+    // Inverse FFT on the multiplied array
+    four1(xBuffer, P, -1);
 
-    // // Inverse FFT on the multiplied array
-    // four1(xComplex, pSize, -1);
+    convertDoubleArrayToData(xBuffer, P * 2, yData, P * 2);
 
-    // // Update output header values.
-    // SubChunk1 sc1 = x.getHeaderSubChunk1();
-    // sc1.chunk_size = pSize + sizeof(SubChunk1) + sizeof(SubChunk2) - 8;
-    // sc1.subchunk1_size = 16;
-    // sc1.audio_format = 1;
-    // sc1.num_channels = 1;
-    // sc1.sample_rate = 44100;
+    // Update output header values.
+    SubChunk1 sc1 = x.getHeaderSubChunk1();
+    sc1.chunk_size = P * 2 + sizeof(SubChunk1) + sizeof(SubChunk2) - 8;
+    sc1.subchunk1_size = 16;
+    sc1.audio_format = 1;
+    sc1.num_channels = 1;
+    sc1.sample_rate = 44100;
 
-    // SubChunk2 sc2 = x.getHeaderSubChunk2();
-    // sc2.subchunk2_size = pSize;
+    SubChunk2 sc2 = x.getHeaderSubChunk2();
+    sc2.subchunk2_size = P * 2;
 
-    // y.write(sc1, sc2, (short *)xComplex, pSize);
+    y.write(sc1, sc2, yData, P * 2);
 
     delete[] xData;
     delete[] hData;
-    delete[] xComplex;
-    delete[] hComplex;
+    delete[] yData;
+    delete[] xBuffer;
+    delete[] hBuffer;
 }
 
 bool isPowerOfTwo(int n)
@@ -84,10 +94,21 @@ bool isPowerOfTwo(int n)
     return (n > 0) && ((n & (n - 1)) == 0);
 }
 
-int roundToNextPowerOfTwo(int n)
+unsigned int roundUpToNextPowerOfTwo(unsigned int n)
 {
-    int power = ceil(std::log2(n));
-    return pow(2, power);
+    if (n == 0)
+    {
+        return 1; // 2^0 = 1
+    }
+
+    n--; // Ensure that if n is already a power of 2, we don't need to add 1
+    n |= n >> 1;
+    n |= n >> 2;
+    n |= n >> 4;
+    n |= n >> 8;
+    n |= n >> 16;
+
+    return n + 1;
 }
 
 void fillComplex(short *data, int dataSize, double *complex)
@@ -100,13 +121,37 @@ void fillComplex(short *data, int dataSize, double *complex)
     }
 }
 
+void convertDataToDoubleArray(short *data, int dataSize, double *out, int outSize)
+{
+    int bufSize = (outSize < dataSize) ? outSize : dataSize;
+    for (int i = 0; i < bufSize; i++)
+    {
+        out[i] = (double)data[i];
+    }
+}
+
+void convertDoubleArrayToData(double *arr, int arrSize, short *out, int outSize)
+{
+    int bufSize = (outSize < arrSize) ? outSize : arrSize;
+    for (int i = 0; i < bufSize; i++)
+    {
+        if (arr[i] > 1)
+        {
+            out[i] = 32767;
+        }
+        else if (arr[i] < -1)
+        {
+            out[i] = -32678;
+        }
+        else
+        {
+            out[i] = static_cast<short>(arr[i] * 32768.0);
+        }
+    }
+}
+
 void four1(double data[], int nn, int isign)
 {
-    if (std::log2(nn) != floor(std::log2(nn)))
-    {
-        std::cout << "nn must be a power of 2\n";
-        return;
-    }
     unsigned long n, mmax, m, j, istep, i;
     double wtemp, wr, wpr, wpi, wi, theta;
     double tempr, tempi;
@@ -116,46 +161,45 @@ void four1(double data[], int nn, int isign)
 
     for (i = 1; i < n; i += 2)
     {
-        // if (j > i)
-        // {
-        //     SWAP(data[j], data[i]);
-        //     SWAP(data[j + 1], data[i + 1]);
-        // }
-        // m = nn;
-        // while (m >= 2 && j > m)
-        // {
-        //     j -= m;
-        //     m >>= 1;
-        // }
-        // j += m;
+        if (j > i)
+        {
+            SWAP(data[j], data[i]);
+            SWAP(data[j + 1], data[i + 1]);
+        }
+        m = nn;
+        while (m >= 2 && j > m)
+        {
+            j -= m;
+            m >>= 1;
+        }
+        j += m;
     }
-    std::cout << "i=" << i << "\n";
 
-    // mmax = 2;
-    // while (n > mmax)
-    // {
-    //     istep = mmax << 1;
-    //     theta = isign * (6.28318530717959 / mmax);
-    //     wtemp = sin(0.5 * theta);
-    //     wpr = -2.0 * wtemp * wtemp;
-    //     wpi = sin(theta);
-    //     wr = 1.0;
-    //     wi = 0.0;
-    //     for (m = 1; m < mmax; m += 2)
-    //     {
-    //         for (i = m; i <= n; i += istep)
-    //         {
-    //             j = i + mmax;
-    //             tempr = wr * data[j] - wi * data[j + 1];
-    //             tempi = wr * data[j + 1] + wi * data[j];
-    //             data[j] = data[i] - tempr;
-    //             data[j + 1] = data[i + 1] - tempi;
-    //             data[i] += tempr;
-    //             data[i + 1] += tempi;
-    //         }
-    //         wr = (wtemp = wr) * wpr - wi * wpi + wr;
-    //         wi = wi * wpr + wtemp * wpi + wi;
-    //     }
-    //     mmax = istep;
-    // }
+    mmax = 2;
+    while (n > mmax)
+    {
+        istep = mmax << 1;
+        theta = isign * (6.28318530717959 / mmax);
+        wtemp = sin(0.5 * theta);
+        wpr = -2.0 * wtemp * wtemp;
+        wpi = sin(theta);
+        wr = 1.0;
+        wi = 0.0;
+        for (m = 1; m < mmax; m += 2)
+        {
+            for (i = m; i <= n; i += istep)
+            {
+                j = i + mmax;
+                tempr = wr * data[j] - wi * data[j + 1];
+                tempi = wr * data[j + 1] + wi * data[j];
+                data[j] = data[i] - tempr;
+                data[j + 1] = data[i + 1] - tempi;
+                data[i] += tempr;
+                data[i + 1] += tempi;
+            }
+            wr = (wtemp = wr) * wpr - wi * wpi + wr;
+            wi = wi * wpr + wtemp * wpi + wi;
+        }
+        mmax = istep;
+    }
 }
