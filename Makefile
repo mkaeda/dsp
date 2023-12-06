@@ -1,6 +1,6 @@
 CC = g++
 CFLAGS = -Wall -std=c++11
-LDFLAGS =
+LDFLAGS = -O2
 
 SRC_DIR = src
 OBJ_DIR = obj
