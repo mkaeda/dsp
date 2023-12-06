@@ -71,18 +71,11 @@ void FftConvolver::convolve(WavFile &x, WavFile &h, WavFile &y)
 
     four1(&xComplex[0] - 1, N, -1);
 
-    // After scaling
-    for (unsigned long i = 0; i < N * 2; i += 2)
-    {
-        xComplex[i] = fmax(SHRT_MIN, fmin(SHRT_MAX, xComplex[i]));
-        xComplex[i + 1] = fmax(SHRT_MIN, fmin(SHRT_MAX, xComplex[i + 1]));
-    }
-
-    // Extract the real part of the result
+    // Clip and extract the real part of the result
     std::vector<short> result(N);
     for (unsigned long i = 0; i < N; ++i)
     {
-        result[i] = static_cast<short>(round(xComplex[i * 2]));
+        result[i] = static_cast<short>(round(fmax(SHRT_MIN, fmin(SHRT_MAX, xComplex[i * 2]))));
     }
 
     // Update output header values.
