@@ -1,6 +1,9 @@
 #include "fft.h"
 
 #include <iostream>
+#include <cmath>
+#include <vector>
+#include <algorithm>
 
 FftConvolver::FftConvolver()
 {
@@ -12,141 +15,119 @@ FftConvolver::~FftConvolver()
     // Destructor if needed
 }
 
-bool isPowerOfTwo(int n);
-unsigned int roundUpToNextPowerOfTwo(unsigned int n);
-void fillComplex(short *data, int dataSize, double *complex);
-// void convertDataToDoubleArray(short *data, int dataSize, double *out, int outSize);
-void convertDoubleArrayToData(double *arr, int arrSize, short *out, int outSize);
-void createComplexSawtooth(double data[], int size);
+unsigned long getPaddedSize(int xSize, int hSize);
+void fillComplex(short *data, int dataSize, std::vector<double> &complex);
 void four1(double data[], int nn, int isign);
 
 void FftConvolver::convolve(WavFile &x, WavFile &h, WavFile &y)
 {
-    const int N = isPowerOfTwo(x.getHeaderSubChunk2().subchunk2_size)
-                      ? x.getHeaderSubChunk2().subchunk2_size
-                      : roundUpToNextPowerOfTwo(x.getHeaderSubChunk2().subchunk2_size);
-    const int M = isPowerOfTwo(h.getHeaderSubChunk2().subchunk2_size)
-                      ? h.getHeaderSubChunk2().subchunk2_size
-                      : roundUpToNextPowerOfTwo(h.getHeaderSubChunk2().subchunk2_size);
-    const int P = isPowerOfTwo(N + M - 1)
-                      ? N + M - 1
-                      : roundUpToNextPowerOfTwo(N + M - 1);
+    short *xData = new short[x.getNumSamples()];
+    short *hData = new short[h.getNumSamples()];
 
-    short *xData = new short[N];
-    short *hData = new short[M];
-    short *yData = new short[P * 2];
+    x.readData(xData, x.getHeaderSubChunk2().subchunk2_size);
+    h.readData(hData, h.getHeaderSubChunk2().subchunk2_size);
 
-    std::fill(xData, xData + N, 0);
-    std::fill(hData, hData + M, 0);
+    const unsigned long N = getPaddedSize(x.getNumSamples(), h.getNumSamples());
 
-    x.readData(xData, N);
-    h.readData(hData, M);
+    std::vector<double> xComplex(N * 2, 0.0);
+    std::vector<double> hComplex(N * 2, 0.0);
 
-    double *xBuffer = new double[P * 2];
-    double *hBuffer = new double[P * 2];
+    fillComplex(xData, x.getNumSamples(), xComplex);
+    fillComplex(hData, h.getNumSamples(), hComplex);
 
-    fillComplex(xData, N, xBuffer);
-    fillComplex(hData, M, hBuffer);
-    // convertDataToDoubleArray(xData, N, xBuffer, N);
-    // convertDataToDoubleArray(hData, M, hBuffer, M);
+    // Perform FFT on both complex arrays
+    four1(&xComplex[0] - 1, N, 1);
+    four1(&hComplex[0] - 1, N, 1);
 
-    // Perform FFT on both arrays
-    four1(xBuffer, P, 1);
-    four1(hBuffer, P, 1);
-
-    // Element-wise multiplication in the frequency domain
-    for (int i = 0; i < P * 2; i += 2)
+    // Complex multiplication: result = x * h
+    double real_x, imag_x, real_h, imag_h;
+    for (unsigned long i = 0; i < N * 2; i += 2)
     {
-        double real = xBuffer[i] * hBuffer[i] - xBuffer[i + 1] * hBuffer[i + 1];
-        double imag = xBuffer[i] * hBuffer[i + 1] + xBuffer[i + 1] * hBuffer[i];
-        xBuffer[i] = real;
-        xBuffer[i + 1] = imag;
+        real_x = xComplex[i];
+        imag_x = xComplex[i + 1];
+        real_h = hComplex[i];
+        imag_h = hComplex[i + 1];
+
+        xComplex[i] = real_x * real_h - imag_x * imag_h;
+        xComplex[i + 1] = real_x * imag_h + imag_x * real_h;
     }
 
-    // Inverse FFT on the multiplied array
-    four1(xBuffer, P, -1);
+    // Find the maximum absolute value in xComplex
+    double maxAbsValue = 0.0;
+    for (unsigned long i = 0; i < N * 2; ++i)
+    {
+        double absValue = std::abs(xComplex[i]);
+        if (absValue > maxAbsValue)
+        {
+            maxAbsValue = absValue;
+        }
+    }
 
-    convertDoubleArrayToData(xBuffer, P * 2, yData, P * 2);
+    // Normalize xComplex
+    for (unsigned long i = 0; i < N * 2; ++i)
+    {
+        xComplex[i] /= maxAbsValue;
+    }
+
+    four1(&xComplex[0] - 1, N, -1);
+
+    // After scaling
+    for (unsigned long i = 0; i < N * 2; i += 2)
+    {
+        xComplex[i] = fmax(SHRT_MIN, fmin(SHRT_MAX, xComplex[i]));
+        xComplex[i + 1] = fmax(SHRT_MIN, fmin(SHRT_MAX, xComplex[i + 1]));
+    }
+
+    // Before writing to the output file
+    std::cout << "Min value in xComplex: " << *std::min_element(xComplex.begin(), xComplex.end()) << std::endl;
+    std::cout << "Max value in xComplex: " << *std::max_element(xComplex.begin(), xComplex.end()) << std::endl;
+
+    // Extract the real part of the result
+    std::vector<short> result(N);
+    for (unsigned long i = 0; i < N; ++i)
+    {
+        result[i] = static_cast<short>(round(xComplex[i * 2]));
+    }
+
+    // Before writing to the output file
+    std::cout << "Min value in result: " << *std::min_element(result.begin(), result.end()) << std::endl;
+    std::cout << "Max value in result: " << *std::max_element(result.begin(), result.end()) << std::endl;
 
     // Update output header values.
     SubChunk1 sc1 = x.getHeaderSubChunk1();
-    sc1.chunk_size = P * 2 + sizeof(SubChunk1) + sizeof(SubChunk2) - 8;
+    sc1.chunk_size = (N * sizeof(short)) + sizeof(SubChunk1) + sizeof(SubChunk2) - 8;
     sc1.subchunk1_size = 16;
     sc1.audio_format = 1;
     sc1.num_channels = 1;
     sc1.sample_rate = 44100;
 
     SubChunk2 sc2 = x.getHeaderSubChunk2();
-    sc2.subchunk2_size = P * 2;
+    sc2.subchunk2_size = (N * sizeof(short));
 
-    y.write(sc1, sc2, yData, P * 2);
+    y.write(sc1, sc2, &result[0], (N * sizeof(short)));
 
     delete[] xData;
     delete[] hData;
-    delete[] yData;
-    delete[] xBuffer;
-    delete[] hBuffer;
 }
 
-bool isPowerOfTwo(int n)
+unsigned long getPaddedSize(int xSize, int hSize)
 {
-    // Check if the integer is greater than 0 and has only one bit set
-    return (n > 0) && ((n & (n - 1)) == 0);
-}
-
-unsigned int roundUpToNextPowerOfTwo(unsigned int n)
-{
-    if (n == 0)
+    int maxValue = std::max(xSize, hSize);
+    unsigned long ret = 1;
+    while (ret < (unsigned long)maxValue)
     {
-        return 1; // 2^0 = 1
+        ret <<= 1;
     }
-
-    n--; // Ensure that if n is already a power of 2, we don't need to add 1
-    n |= n >> 1;
-    n |= n >> 2;
-    n |= n >> 4;
-    n |= n >> 8;
-    n |= n >> 16;
-
-    return n + 1;
+    return ret;
 }
 
-void fillComplex(short *data, int dataSize, double *complex)
+void fillComplex(short *data, int dataSize, std::vector<double> &complex)
 {
     // Fill the complex arrays with the real data
     for (int i = 0; i < dataSize; i++)
     {
         complex[i * 2] = data[i];
         complex[i * 2 + 1] = 0.0;
-    }
-}
-
-void convertDataToDoubleArray(short *data, int dataSize, double *out, int outSize)
-{
-    int bufSize = (outSize < dataSize) ? outSize : dataSize;
-    for (int i = 0; i < bufSize; i++)
-    {
-        out[i] = (double)data[i];
-    }
-}
-
-void convertDoubleArrayToData(double *arr, int arrSize, short *out, int outSize)
-{
-    int bufSize = (outSize < arrSize) ? outSize : arrSize;
-    for (int i = 0; i < bufSize; i++)
-    {
-        if (arr[i] > 1)
-        {
-            out[i] = 32767;
-        }
-        else if (arr[i] < -1)
-        {
-            out[i] = -32678;
-        }
-        else
-        {
-            out[i] = static_cast<short>(arr[i] * 32768.0);
-        }
     }
 }
 
