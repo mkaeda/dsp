@@ -78,20 +78,12 @@ void FftConvolver::convolve(WavFile &x, WavFile &h, WavFile &y)
         xComplex[i + 1] = fmax(SHRT_MIN, fmin(SHRT_MAX, xComplex[i + 1]));
     }
 
-    // Before writing to the output file
-    std::cout << "Min value in xComplex: " << *std::min_element(xComplex.begin(), xComplex.end()) << std::endl;
-    std::cout << "Max value in xComplex: " << *std::max_element(xComplex.begin(), xComplex.end()) << std::endl;
-
     // Extract the real part of the result
     std::vector<short> result(N);
     for (unsigned long i = 0; i < N; ++i)
     {
         result[i] = static_cast<short>(round(xComplex[i * 2]));
     }
-
-    // Before writing to the output file
-    std::cout << "Min value in result: " << *std::min_element(result.begin(), result.end()) << std::endl;
-    std::cout << "Max value in result: " << *std::max_element(result.begin(), result.end()) << std::endl;
 
     // Update output header values.
     SubChunk1 sc1 = x.getHeaderSubChunk1();
