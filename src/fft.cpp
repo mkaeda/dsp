@@ -31,9 +31,10 @@ void FftConvolver::convolve(WavFile &x, WavFile &h, WavFile &y)
     h.readData(hData, h.getHeaderSubChunk2().subchunk2_size);
 
     const unsigned long N = getPaddedSize(X_NUM_SAMPLES, H_NUM_SAMPLES);
+    const unsigned long COMPLEX_SIZE = N * 2;
 
-    std::vector<double> xComplex(N * 2, 0.0);
-    std::vector<double> hComplex(N * 2, 0.0);
+    std::vector<double> xComplex(COMPLEX_SIZE, 0.0);
+    std::vector<double> hComplex(COMPLEX_SIZE, 0.0);
 
     fillComplex(xData, X_NUM_SAMPLES, xComplex);
     fillComplex(hData, H_NUM_SAMPLES, hComplex);
@@ -44,7 +45,7 @@ void FftConvolver::convolve(WavFile &x, WavFile &h, WavFile &y)
 
     // Complex multiplication: result = x * h
     double real_x, imag_x, real_h, imag_h;
-    for (unsigned long i = 0; i < N * 2; i += 2)
+    for (unsigned long i = 0; i < COMPLEX_SIZE; i += 2)
     {
         real_x = xComplex[i];
         imag_x = xComplex[i + 1];
@@ -57,7 +58,7 @@ void FftConvolver::convolve(WavFile &x, WavFile &h, WavFile &y)
 
     // Find the maximum absolute value in xComplex
     double maxAbsValue = 0.0;
-    for (unsigned long i = 0; i < N * 2; ++i)
+    for (unsigned long i = 0; i < COMPLEX_SIZE; ++i)
     {
         double absValue = std::abs(xComplex[i]);
         if (absValue > maxAbsValue)
@@ -67,7 +68,7 @@ void FftConvolver::convolve(WavFile &x, WavFile &h, WavFile &y)
     }
 
     // Normalize xComplex
-    for (unsigned long i = 0; i < N * 2; ++i)
+    for (unsigned long i = 0; i < COMPLEX_SIZE; ++i)
     {
         xComplex[i] /= maxAbsValue;
     }
@@ -116,7 +117,6 @@ void fillComplex(short *data, int dataSize, std::vector<double> &complex)
     for (int i = 0; i < dataSize; i++)
     {
         complex[i * 2] = data[i];
-        complex[i * 2 + 1] = 0.0;
     }
 }
 
